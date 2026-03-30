@@ -55,6 +55,13 @@ async def setup_webhook(
 
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.post(_telegram_api_url("setWebhook"), json=payload)
+        
+        # Log the error response from Telegram if it fails
+        if resp.status_code != 200:
+            error_details = resp.text
+            print(f"TELEGRAM API ERROR: {error_details}")
+            raise HTTPException(status_code=500, detail=f"Telegram API Error: {error_details}")
+            
         resp.raise_for_status()
         telegram_response = resp.json()
 
