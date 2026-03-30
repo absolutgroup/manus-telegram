@@ -103,80 +103,26 @@ async def telegram_webhook(
         await send_telegram_message(chat_id, "Envie uma mensagem de texto para eu responder.")
         return JSONResponse({"ok": True, "ignored": "no-text"})
 
-    # Quando recebemos uma mensagem, enviamos para o Manus passando a URL de callback (webhook)
-    base_url = str(request.base_url).rstrip("/")
-    manus_webhook_url = f"{base_url}/manus/webhook"
+    # Informa ao usuário que a tarefa começou (pois pode demorar)
+    await send_telegram_message(chat_id, "⏳ O Manus está pensando... (isso pode levar alguns minutos)")
 
-    try:
-        reply_text = await manus_client.ask(
-            text, 
-            user_id=user_id, 
-            webhook_url=manus_webhook_url, 
-            chat_id=chat_id
-        )
-    except Exception as e:
-        reply_text = f"Erro ao consultar o Manus: {str(e)}"
+    import asyncio
+    
+    async def process_manus_and_reply():
+        try:
+            reply_text = await manus_client.ask(text, user_id=user_id)
+        except Exception as e:
+            reply_text = f"Erro ao consultar o Manus: {str(e)}"
 
-    if len(reply_text) > 4000:
-        reply_text = reply_text[:4000]
+        if len(reply_text) > 4000:
+            # Envia em partes se for muito longo
+            for i in range(0, len(reply_text), 4000):
+                part = reply_text[i:i+4000]
+                await send_telegram_message(chat_id, part)
+        else:
+            await send_telegram_message(chat_id, reply_text)
 
-    await send_telegram_message(chat_id, reply_text)
+    # Roda em background para o Telegram não cancelar a requisição por timeout
+    asyncio.create_task(process_manus_and_reply())
     
     return JSONResponse({"ok": True})
-
-@app.post("/manus/webhook")
-async def manus_webhook(request: Request) -> JSONResponse:
-    """Recebe a resposta final do Manus quando a tarefa é concluída"""
-    try:
-        data = await request.json()
-        print(f"WEBHOOK RECEBIDO DO MANUS: {data}")
-        
-        # O chat_id passamos pela URL do webhook
-        chat_id_str = request.query_params.get("chat_id")
-        if not chat_id_str:
-            print("Erro: webhook recebido sem chat_id na query string")
-            return JSONResponse({"error": "Missing chat_id"}, status_code=400)
-            
-        chat_id = int(chat_id_str)
-        
-        # A API do Manus pode mandar o status em diferentes lugares dependendo de como implementaram
-        status = data.get("status", "").lower()
-        
-        # Se ele não enviar 'status', mas enviar um 'result', vamos assumir que deu certo
-        if status in ("completed", "done", "success", "finished") or "result" in data or "response" in data:
-            # Tenta pegar o resultado final
-            result = data.get("result", "")
-            if not result:
-                for key in ("response", "answer", "output", "message", "content"):
-                    val = data.get(key)
-                    if val and isinstance(val, str):
-                        result = val
-                        break
-                        
-            if result:
-                # O Telegram tem limite de 4096 caracteres por mensagem
-                if len(result) > 4000:
-                    # Envia em partes se for muito longo
-                    for i in range(0, len(result), 4000):
-                        part = result[i:i+4000]
-                        await send_telegram_message(chat_id, part)
-                else:
-                    await send_telegram_message(chat_id, result)
-            else:
-                # Caiu aqui porque veio como 'completed' mas não achou o texto
-                import json
-                raw_data = json.dumps(data, indent=2)
-                await send_telegram_message(chat_id, f"A tarefa terminou, mas o formato é diferente do esperado. Dados brutos:\n```\n{raw_data}\n```")
-                
-        elif status in ("failed", "error", "canceled"):
-            error_msg = data.get("error", "Erro desconhecido")
-            await send_telegram_message(chat_id, f"❌ A tarefa do Manus falhou. Motivo: {error_msg}")
-        else:
-            # Caso o status seja 'processing' ou algo assim que eles mandam como update parcial
-            print(f"Webhook ignorado: status '{status}'")
-            
-        return JSONResponse({"ok": True})
-        
-    except Exception as e:
-        print(f"Erro no webhook do Manus: {e}")
-        return JSONResponse({"error": str(e)}, status_code=500)
