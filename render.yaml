@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: telegram-manus-bridge
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: 8721708505:AAGZn5GSPyuTc7niHyWppT12O0aWFN6xiK8
+        sync: false
+      - key: TELEGRAM_WEBHOOK_SECRET
+        generateValue: true
+      - key: ADMIN_TOKEN
+        generateValue: true
+      - key: MANUS_API_URL
+        sync: false
+      - key: MANUS_API_KEY
+        sync: false
+      - key: MANUS_MODEL
+        sync: false
+      - key: MANUS_TIMEOUT_SECONDS
+        value: "45"
