@@ -21,12 +21,13 @@ class ManusClient:
             )
 
         headers = {
-            "Authorization": f"Bearer {self.api_key}",
+            "API_KEY": self.api_key,
             "Content-Type": "application/json",
+            "Accept": "application/json",
         }
 
         payload: dict[str, Any] = {
-            "message": user_text,
+            "prompt": user_text,
         }
         if user_id is not None:
             payload["user_id"] = str(user_id)
