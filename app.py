@@ -33,11 +33,11 @@ async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.post("/setup-webhook")
+@app.api_route("/setup-webhook", methods=["GET", "POST"])
 async def setup_webhook(
     request: Request,
-    x_admin_token: str | None = Header(default=None, alias="X-Admin-Token"),
 ) -> JSONResponse:
+    x_admin_token = request.headers.get("X-Admin-Token") or request.query_params.get("admin_token")
     if not ADMIN_TOKEN:
         raise HTTPException(
             status_code=500,
