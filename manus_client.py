@@ -46,6 +46,16 @@ class ManusClient:
             return data
 
         if isinstance(data, dict):
+            # NOVO: Tentar pegar status de erro ou detalhes que a API do Manus pode mandar quando dá pau
+            if "error" in data:
+                return f"Erro do Manus: {data['error']}"
+            if "detail" in data:
+                return f"Detalhe do Manus: {data['detail']}"
+
+            # Tenta pegar apenas o ID da task (a API deles geralmente retorna a task criada em vez da resposta direta)
+            if "id" in data and "status" in data:
+                return f"Tarefa recebida pelo Manus! ID: {data['id']} - Status: {data['status']}\n(Nota: a API v1/tasks do Manus é assíncrona, ela cria a tarefa e você precisaria de outro endpoint para ler o resultado final. Retorno cru: {data})"
+
             for key in ("reply", "response", "answer", "text", "output", "message"):
                 value = data.get(key)
                 if isinstance(value, str) and value.strip():
@@ -61,4 +71,10 @@ class ManusClient:
                         if isinstance(content, str) and content.strip():
                             return content.strip()
 
-        return "Recebi a resposta do Manus, mas não consegui interpretar o formato retornado."
+        # NOVO: Se ele não achar nenhum campo conhecido, imprime o JSON puro para vermos o que veio
+        import json
+        try:
+            raw_json = json.dumps(data, indent=2)
+            return f"Retorno desconhecido da API do Manus:\n```\n{raw_json}\n```"
+        except Exception:
+            return f"Recebi a resposta do Manus, mas não consegui interpretar o formato: {data}"
