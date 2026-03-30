@@ -56,6 +56,14 @@ class ManusClient:
             if "id" in data and "status" in data:
                 return f"Tarefa recebida pelo Manus! ID: {data['id']} - Status: {data['status']}\n(Nota: a API v1/tasks do Manus é assíncrona, ela cria a tarefa e você precisaria de outro endpoint para ler o resultado final. Retorno cru: {data})"
 
+            # Tratamento exato para a API atual do Manus
+            if "task_url" in data and "task_id" in data:
+                return (
+                    f"🤖 Manus está trabalhando na sua tarefa!\n\n"
+                    f"Acompanhe o processo ou veja o resultado final aqui:\n"
+                    f"{data['task_url']}"
+                )
+
             for key in ("reply", "response", "answer", "text", "output", "message"):
                 value = data.get(key)
                 if isinstance(value, str) and value.strip():
