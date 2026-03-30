@@ -129,21 +129,25 @@ async def manus_webhook(request: Request) -> JSONResponse:
     """Recebe a resposta final do Manus quando a tarefa é concluída"""
     try:
         data = await request.json()
+        print(f"WEBHOOK RECEBIDO DO MANUS: {data}")
         
         # O chat_id passamos pela URL do webhook
         chat_id_str = request.query_params.get("chat_id")
         if not chat_id_str:
+            print("Erro: webhook recebido sem chat_id na query string")
             return JSONResponse({"error": "Missing chat_id"}, status_code=400)
             
         chat_id = int(chat_id_str)
         
+        # A API do Manus pode mandar o status em diferentes lugares dependendo de como implementaram
         status = data.get("status", "").lower()
         
-        if status in ("completed", "done", "success", "finished"):
+        # Se ele não enviar 'status', mas enviar um 'result', vamos assumir que deu certo
+        if status in ("completed", "done", "success", "finished") or "result" in data or "response" in data:
             # Tenta pegar o resultado final
             result = data.get("result", "")
             if not result:
-                for key in ("response", "answer", "output", "message"):
+                for key in ("response", "answer", "output", "message", "content"):
                     val = data.get(key)
                     if val and isinstance(val, str):
                         result = val
@@ -159,11 +163,17 @@ async def manus_webhook(request: Request) -> JSONResponse:
                 else:
                     await send_telegram_message(chat_id, result)
             else:
-                await send_telegram_message(chat_id, f"A tarefa do Manus terminou, mas não consegui extrair o texto final. Dados: {data}")
+                # Caiu aqui porque veio como 'completed' mas não achou o texto
+                import json
+                raw_data = json.dumps(data, indent=2)
+                await send_telegram_message(chat_id, f"A tarefa terminou, mas o formato é diferente do esperado. Dados brutos:\n```\n{raw_data}\n```")
                 
         elif status in ("failed", "error", "canceled"):
             error_msg = data.get("error", "Erro desconhecido")
             await send_telegram_message(chat_id, f"❌ A tarefa do Manus falhou. Motivo: {error_msg}")
+        else:
+            # Caso o status seja 'processing' ou algo assim que eles mandam como update parcial
+            print(f"Webhook ignorado: status '{status}'")
             
         return JSONResponse({"ok": True})
         
