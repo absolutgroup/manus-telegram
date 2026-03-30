@@ -1,4 +1,3 @@
-import asyncio
 import json
 import os
 from typing import Any
@@ -16,7 +15,7 @@ class ManusClient:
     def is_configured(self) -> bool:
         return bool(self.base_url and self.api_key)
 
-    async def ask(self, user_text: str, user_id: int | None = None) -> str:
+    async def ask(self, user_text: str, user_id: int | None = None, webhook_url: str | None = None, chat_id: int | None = None) -> str:
         if not self.is_configured():
             return "Integração Manus não configurada. Defina MANUS_API_URL e MANUS_API_KEY no Render."
 
@@ -29,10 +28,22 @@ class ManusClient:
         payload: dict[str, Any] = {
             "prompt": user_text,
         }
+        
         if user_id is not None:
             payload["user_id"] = str(user_id)
+            
         if self.model:
             payload["agentProfile"] = self.model
+            
+        # Adicionamos a configuração do Webhook do Manus para ele nos avisar quando terminar
+        if webhook_url and chat_id:
+            payload["webhook"] = webhook_url
+            # Podemos passar o chat_id no metadata ou na URL para saber para quem responder depois
+            # A forma mais garantida é colocar como parâmetro na URL do webhook
+            if "?" in webhook_url:
+                payload["webhook"] = f"{webhook_url}&chat_id={chat_id}"
+            else:
+                payload["webhook"] = f"{webhook_url}?chat_id={chat_id}"
 
         async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
             try:
@@ -50,12 +61,11 @@ class ManusClient:
         if "detail" in data:
             return f"Detalhe do Manus: {data['detail']}"
 
-        # Se retornou um task_id, vamos fazer o polling!
-        if "task_id" in data:
-            task_id = data["task_id"]
-            return await self._poll_task_result(task_id, headers)
+        # Se enviamos um webhook, o Manus só vai nos retornar o task_id e o aviso de que começou
+        if "task_id" in data and webhook_url:
+            return "⏳ O Manus começou a trabalhar na sua tarefa e enviará a resposta aqui quando terminar!"
             
-        # Fallback caso ele responda direto (se um dia a API mudar)
+        # Se não configuramos webhook ou a API retornou direto
         for key in ("reply", "response", "answer", "text", "output", "message"):
             value = data.get(key)
             if isinstance(value, str) and value.strip():
@@ -66,49 +76,3 @@ class ManusClient:
             return f"Retorno desconhecido da API do Manus:\n```\n{raw_json}\n```"
         except Exception:
             return f"Recebi a resposta do Manus, mas não consegui interpretar o formato: {data}"
-
-    async def _poll_task_result(self, task_id: str, headers: dict) -> str:
-        """Fica checando o status da tarefa a cada 5 segundos até concluir ou dar timeout (limite de 3 minutos)."""
-        max_attempts = 36  # 36 tentativas * 5 segundos = 3 minutos
-        
-        # O endpoint para ver a task geralmente é /v1/tasks/{task_id} ou similar.
-        # Vamos assumir que base_url é algo como https://api.manus.ai/v1/tasks
-        # Então a URL de status seria {base_url}/{task_id}
-        status_url = f"{self.base_url}/{task_id}"
-        
-        async with httpx.AsyncClient(timeout=30) as client:
-            for attempt in range(max_attempts):
-                await asyncio.sleep(5)  # Espera 5 segundos antes de checar
-                
-                try:
-                    response = await client.get(status_url, headers=headers)
-                    response.raise_for_status()
-                    task_data = response.json()
-                    
-                    status = task_data.get("status", "").lower()
-                    
-                    if status in ("completed", "done", "success", "finished"):
-                        # Tenta pegar o resultado final
-                        result = task_data.get("result", "")
-                        if result:
-                            return result
-                        
-                        # Se não tem 'result', tenta outras chaves comuns
-                        for key in ("response", "answer", "output", "message"):
-                            val = task_data.get(key)
-                            if val and isinstance(val, str):
-                                return val
-                                
-                        return f"Tarefa {task_id} concluída, mas o resultado estava vazio ou em formato não esperado."
-                        
-                    elif status in ("failed", "error", "canceled"):
-                        error_msg = task_data.get("error", "Erro desconhecido")
-                        return f"A tarefa do Manus falhou. Motivo: {error_msg}"
-                        
-                    # Se for "processing", "pending", "running", continua o loop
-                    
-                except Exception as e:
-                    # Pode ser erro de rede momentâneo, continua tentando
-                    print(f"Erro ao checar status da tarefa {task_id}: {e}")
-                    
-            return f"⏳ O Manus está demorando muito para responder (mais de 3 minutos). Você pode checar o resultado manualmente aqui: https://manus.im/app/{task_id}"
