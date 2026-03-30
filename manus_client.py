@@ -32,7 +32,7 @@ class ManusClient:
         if user_id is not None:
             payload["user_id"] = str(user_id)
         if self.model:
-            payload["model"] = self.model
+            payload["agentProfile"] = self.model
 
         async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
             response = await client.post(self.base_url, headers=headers, json=payload)
