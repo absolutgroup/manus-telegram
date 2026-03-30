@@ -103,13 +103,24 @@ async def telegram_webhook(
         await send_telegram_message(chat_id, "Envie uma mensagem de texto para eu responder.")
         return JSONResponse({"ok": True, "ignored": "no-text"})
 
-    try:
-        reply_text = await manus_client.ask(text, user_id=user_id)
-    except Exception:
-        reply_text = "Erro ao consultar o Manus. Tente novamente em instantes."
+    # Informa ao usuário que a tarefa começou (pois pode demorar)
+    await send_telegram_message(chat_id, "⏳ O Manus está pensando... (isso pode levar alguns minutos dependendo da complexidade)")
 
-    if len(reply_text) > 4000:
-        reply_text = reply_text[:4000]
+    # Como estamos no Webhook, o Telegram exige que a gente responda rápido (senão ele tenta de novo).
+    # Então disparamos a busca em background usando asyncio.create_task e retornamos OK para o Telegram.
+    import asyncio
+    
+    async def process_manus_and_reply():
+        try:
+            reply_text = await manus_client.ask(text, user_id=user_id)
+        except Exception as e:
+            reply_text = f"Erro ao consultar o Manus: {str(e)}"
 
-    await send_telegram_message(chat_id, reply_text)
+        if len(reply_text) > 4000:
+            reply_text = reply_text[:4000]
+
+        await send_telegram_message(chat_id, reply_text)
+
+    asyncio.create_task(process_manus_and_reply())
+    
     return JSONResponse({"ok": True})
